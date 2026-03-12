@@ -27,7 +27,7 @@ OUT_ACTIVE_EXACT = Path("mask_active_only_400x400.png")
 OUT_ACTIVE_PREVIEW = Path("mask_active_only_preview.png")
 
 # 方向标记（三角形）位置：左下角边框内（玻璃中心坐标 -5..+5）
-TRI_CENTER = [(-4.8, -4.2), (-4.2, -4.2), (-4.8, -4.8)]
+TRI_CENTER = [(-4.8, -4.8), (-4.2, -4.8), (-4.8, -4.2)]
 
 
 # 约定（按 ThinTact 常见振幅铬膜逻辑）：
