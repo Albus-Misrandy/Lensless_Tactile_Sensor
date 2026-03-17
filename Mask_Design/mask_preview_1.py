@@ -15,31 +15,29 @@ ACTIVE_OFFSET_MM = (L_GLASS_MM - L_ACTIVE_MM) / 2.0
 
 SEED = 7
 MAX_RUN = 25
-
-PX_PER_CELL = 3  # PNG预览缩放（仅预览，不代表加工精度）
+PX_PER_CELL = 3
 
 # 输出文件
-OUT_PDF = Path("mask_full_10x10mm_vector.pdf")                         # 1:1 加工版PDF
-OUT_PDF_VIEW = Path("mask_full_10x10mm_vector_VIEWx20.pdf")            # 20x 预览PDF
+OUT_PDF = Path("mask_full_10x10mm_vector.pdf")  # 1:1 加工版
+OUT_PDF_VIEW = Path("mask_full_10x10mm_vector_VIEWx20.pdf")  # 20x 预览版
 
-OUT_DXF_SOLID = Path("mask_full_10x10mm_R12_SOLID.dxf")                # 生产用DXF（发厂）
-OUT_DXF_VIEW = Path("mask_full_10x10mm_VIEWx20_WIREFRAME.dxf")         # 查看用DXF（AutoCAD里看线框）
+OUT_DXF_SOLID = Path("mask_full_10x10mm_R12_SOLID.dxf")  # 生产用DXF（发厂）
+OUT_DXF_VIEW_SOLID = Path("mask_full_10x10mm_VIEWx20_SOLID.dxf")  # 查看用DXF（放大20x，仍是SOLID填充）
 
 OUT_FULL_PNG = Path("mask_full_10x10_preview.png")
 OUT_ACTIVE_EXACT = Path("mask_active_only_400x400.png")
 OUT_ACTIVE_PREVIEW = Path("mask_active_only_preview.png")
 
-# 方向标记（三角形）：左下角边框内（玻璃中心坐标 -5..+5）
 TRI_CENTER = [(-4.8, -4.8), (-4.2, -4.8), (-4.8, -4.2)]
 
-# 约定：
-# M=1 -> 透光开孔（white）
-# M=0 -> 铬膜遮光（black）
-# PDF/DXF里画的是“铬膜区域”（黑色/实体区域）
 
+# 约定：
+# M=1 -> 白 -> 透光
+# M=0 -> 黑 -> 铬膜遮光
+# PDF/DXF 都是画 M=0 的区域（铬膜区域）
 
 # =========================
-# 生成 phi & 可分离 mask
+# 生成 phi & mask
 # =========================
 def gen_phi_balanced(K, seed=7, max_run=25, max_tries=4000):
     rng = np.random.default_rng(seed)
@@ -62,8 +60,10 @@ def gen_phi_balanced(K, seed=7, max_run=25, max_tries=4000):
             return phi
     return phi
 
+
 def mask_from_phi(phi):
     return (phi[:, None] == phi[None, :]).astype(np.uint8)
+
 
 def build_runs(phi):
     runs = []
@@ -77,30 +77,27 @@ def build_runs(phi):
     runs.append((start, len(phi), cur))
     return runs
 
+
 phi = gen_phi_balanced(K, seed=SEED, max_run=MAX_RUN)
 M = mask_from_phi(phi)  # 1=open, 0=chrome
 runs = build_runs(phi)
 
 # =========================
-# 生成铬膜矩形块 chrome_rects
-# 关键：Y方向要与PNG一致（PNG row=0在顶部）
+# chrome_rects（确保与PNG方向一致：row0在顶部）
 # =========================
 chrome_rects = []
 for rs, re, rsign in runs:
-    # 把矩阵的顶行映射到物理坐标的上边
     y1 = ACTIVE_OFFSET_MM + (K - re) * CELL_MM
     y2 = ACTIVE_OFFSET_MM + (K - rs) * CELL_MM
-
     for cs, ce, csign in runs:
         if rsign == csign:
-            continue  # open
+            continue
         x1 = ACTIVE_OFFSET_MM + cs * CELL_MM
         x2 = ACTIVE_OFFSET_MM + ce * CELL_MM
         chrome_rects.append((x1, y1, x2, y2))
 
-
 # =========================
-# (A) PNG 三张（黑=不透光，白=透光）
+# (A) PNG 三张
 # =========================
 active_exact = Image.fromarray((M * 255).astype(np.uint8), mode="L")
 active_exact.save(OUT_ACTIVE_EXACT)
@@ -120,21 +117,26 @@ frame_w = max(2, PX_PER_CELL)
 draw.rectangle([border_px - 2, border_px - 2, border_px + active_px + 1, border_px + active_px + 1],
                outline=0, width=frame_w)
 
+
 def mm_to_px(x_mm, y_mm):
     px = int(round((x_mm / L_GLASS_MM + 0.5) * glass_px))
     py = int(round((0.5 - y_mm / L_GLASS_MM) * glass_px))
     return px, py
 
+
 tri_px = [mm_to_px(x, y) for (x, y) in TRI_CENTER]
 draw.polygon(tri_px, fill=0)
+
 canvas_png.save(OUT_FULL_PNG)
 
-
 # =========================
-# (B) PDF：1:1 + 20x预览（黑填充=铬膜不透光）
+# (B) PDF：1:1 + 20x
 # =========================
 MM_TO_PT = 72.0 / 25.4
+
+
 def mm(v): return v * MM_TO_PT
+
 
 def export_pdf(out_path: Path, scale: float):
     c = rl_canvas.Canvas(str(out_path),
@@ -143,23 +145,19 @@ def export_pdf(out_path: Path, scale: float):
     c.setFillColor(white)
     c.rect(0, 0, mm(L_GLASS_MM * scale), mm(L_GLASS_MM * scale), stroke=0, fill=1)
 
-    # 画铬膜区域（黑）
     c.setFillColor(black)
     for (x1, y1, x2, y2) in chrome_rects:
         c.rect(mm(x1 * scale), mm(y1 * scale),
                mm((x2 - x1) * scale), mm((y2 - y1) * scale),
                stroke=0, fill=1)
 
-    # 外框 & 有效区框
     c.setLineWidth(0.2)
     c.setStrokeColor(black)
     c.rect(0, 0, mm(L_GLASS_MM * scale), mm(L_GLASS_MM * scale), stroke=1, fill=0)
     c.rect(mm(ACTIVE_OFFSET_MM * scale), mm(ACTIVE_OFFSET_MM * scale),
-           mm(L_ACTIVE_MM * scale), mm(L_ACTIVE_MM * scale),
-           stroke=1, fill=0)
+           mm(L_ACTIVE_MM * scale), mm(L_ACTIVE_MM * scale), stroke=1, fill=0)
 
-    # 方向三角（黑）
-    tri_bl = [(x + 5.0, y + 5.0) for (x, y) in TRI_CENTER]  # 转到(0..10)
+    tri_bl = [(x + 5.0, y + 5.0) for (x, y) in TRI_CENTER]
     path = c.beginPath()
     path.moveTo(mm(tri_bl[0][0] * scale), mm(tri_bl[0][1] * scale))
     path.lineTo(mm(tri_bl[1][0] * scale), mm(tri_bl[1][1] * scale))
@@ -170,135 +168,104 @@ def export_pdf(out_path: Path, scale: float):
     c.showPage()
     c.save()
 
+
 export_pdf(OUT_PDF, scale=1.0)
 export_pdf(OUT_PDF_VIEW, scale=20.0)
 
 
 # =========================
-# (C) DXF（R12）：两个版本
-#   1) 生产用：SOLID 填充铬膜区域（发厂）
-#   2) 查看用：放大20x，线框矩形（AutoCAD看起来像“网格线框”）
+# (C) DXF：R12 + SOLID + LINE（顶点顺序修复，避免菱形显示）
 # =========================
 def dxf_r12_header():
     return "\n".join([
-        "0","SECTION","2","HEADER",
-        "9","$ACADVER","1","AC1009",   # R12
-        "0","ENDSEC",
-        "0","SECTION","2","ENTITIES"
+        "0", "SECTION", "2", "HEADER",
+        "9", "$ACADVER", "1", "AC1009",
+        "0", "ENDSEC",
+        "0", "SECTION", "2", "ENTITIES"
     ]) + "\n"
 
+
 def dxf_r12_footer():
-    return "\n".join(["0","ENDSEC","0","EOF"]) + "\n"
+    return "\n".join(["0", "ENDSEC", "0", "EOF"]) + "\n"
+
 
 def dxf_line(x1, y1, x2, y2, layer="0"):
     return "\n".join([
-        "0","LINE",
-        "8",layer,
-        "10",f"{x1:.6f}","20",f"{y1:.6f}",
-        "11",f"{x2:.6f}","21",f"{y2:.6f}",
+        "0", "LINE",
+        "8", layer,
+        "10", f"{x1:.6f}", "20", f"{y1:.6f}",
+        "11", f"{x2:.6f}", "21", f"{y2:.6f}",
     ]) + "\n"
 
-def dxf_solid_rect(x1, y1, x2, y2, layer="0"):
+
+def dxf_solid_rect_NO_DIAG(x1, y1, x2, y2, layer="0"):
+    """
+    关键：点1-点3这条边变成矩形左边界，不再是内部对角线
+    点顺序：
+      1:(x1,y1) 2:(x2,y1) 3:(x1,y2) 4:(x2,y2)
+    """
     return "\n".join([
-        "0","SOLID",
-        "8",layer,
-        "10",f"{x1:.6f}","20",f"{y1:.6f}",
-        "11",f"{x2:.6f}","21",f"{y1:.6f}",
-        "12",f"{x2:.6f}","22",f"{y2:.6f}",
-        "13",f"{x1:.6f}","23",f"{y2:.6f}",
+        "0", "SOLID",
+        "8", layer,
+        "10", f"{x1:.6f}", "20", f"{y1:.6f}",  # pt1
+        "11", f"{x2:.6f}", "21", f"{y1:.6f}",  # pt2
+        "12", f"{x1:.6f}", "22", f"{y2:.6f}",  # pt3  (注意这里是x1,y2)
+        "13", f"{x2:.6f}", "23", f"{y2:.6f}",  # pt4
     ]) + "\n"
 
-def export_dxf_solid(out_path: Path, scale: float = 1.0):
-    entities = []
 
-    # 铬膜区域：SOLID（生产用）
+def export_dxf_solid(out_path: Path, scale: float):
+    ents = []
+
+    # 铬膜区域：SOLID
     for (x1, y1, x2, y2) in chrome_rects:
-        entities.append(dxf_solid_rect(x1*scale, y1*scale, x2*scale, y2*scale, layer="CHROME"))
+        ents.append(dxf_solid_rect_NO_DIAG(x1 * scale, y1 * scale, x2 * scale, y2 * scale, layer="CHROME"))
 
-    # 外框
+    # 外框/有效框/方向三角（线）
     Lg = L_GLASS_MM * scale
     La = L_ACTIVE_MM * scale
     off = ACTIVE_OFFSET_MM * scale
 
-    entities += [
-        dxf_line(0,0, Lg,0, layer="OUTLINE"),
-        dxf_line(Lg,0, Lg,Lg, layer="OUTLINE"),
-        dxf_line(Lg,Lg, 0,Lg, layer="OUTLINE"),
-        dxf_line(0,Lg, 0,0, layer="OUTLINE"),
+    ents += [
+        dxf_line(0, 0, Lg, 0, layer="OUTLINE"),
+        dxf_line(Lg, 0, Lg, Lg, layer="OUTLINE"),
+        dxf_line(Lg, Lg, 0, Lg, layer="OUTLINE"),
+        dxf_line(0, Lg, 0, 0, layer="OUTLINE"),
     ]
-    # 有效区框
-    entities += [
-        dxf_line(off,off, off+La,off, layer="OUTLINE"),
-        dxf_line(off+La,off, off+La,off+La, layer="OUTLINE"),
-        dxf_line(off+La,off+La, off,off+La, layer="OUTLINE"),
-        dxf_line(off,off+La, off,off, layer="OUTLINE"),
+    ents += [
+        dxf_line(off, off, off + La, off, layer="OUTLINE"),
+        dxf_line(off + La, off, off + La, off + La, layer="OUTLINE"),
+        dxf_line(off + La, off + La, off, off + La, layer="OUTLINE"),
+        dxf_line(off, off + La, off, off, layer="OUTLINE"),
     ]
-    # 方向三角线框
+
     tri_bl = [(x + 5.0, y + 5.0) for (x, y) in TRI_CENTER]
-    tri_bl = [(p[0]*scale, p[1]*scale) for p in tri_bl]
-    entities += [
+    tri_bl = [(p[0] * scale, p[1] * scale) for p in tri_bl]
+    ents += [
         dxf_line(tri_bl[0][0], tri_bl[0][1], tri_bl[1][0], tri_bl[1][1], layer="MARK"),
         dxf_line(tri_bl[1][0], tri_bl[1][1], tri_bl[2][0], tri_bl[2][1], layer="MARK"),
         dxf_line(tri_bl[2][0], tri_bl[2][1], tri_bl[0][0], tri_bl[0][1], layer="MARK"),
     ]
 
-    out_path.write_text(dxf_r12_header() + "".join(entities) + dxf_r12_footer(), encoding="ascii")
+    out_path.write_text(dxf_r12_header() + "".join(ents) + dxf_r12_footer(), encoding="ascii")
 
-def export_dxf_wireframe(out_path: Path, scale: float = 20.0):
-    entities = []
 
-    # 铬膜区域：只画矩形边界（查看用，线框更像“图片方格感”）
-    for (x1, y1, x2, y2) in chrome_rects:
-        x1 *= scale; y1 *= scale; x2 *= scale; y2 *= scale
-        entities += [
-            dxf_line(x1,y1, x2,y1, layer="CHROME_WIRE"),
-            dxf_line(x2,y1, x2,y2, layer="CHROME_WIRE"),
-            dxf_line(x2,y2, x1,y2, layer="CHROME_WIRE"),
-            dxf_line(x1,y2, x1,y1, layer="CHROME_WIRE"),
-        ]
-
-    # 外框/有效框/方向标
-    Lg = L_GLASS_MM * scale
-    La = L_ACTIVE_MM * scale
-    off = ACTIVE_OFFSET_MM * scale
-
-    entities += [
-        dxf_line(0,0, Lg,0, layer="OUTLINE"),
-        dxf_line(Lg,0, Lg,Lg, layer="OUTLINE"),
-        dxf_line(Lg,Lg, 0,Lg, layer="OUTLINE"),
-        dxf_line(0,Lg, 0,0, layer="OUTLINE"),
-    ]
-    entities += [
-        dxf_line(off,off, off+La,off, layer="OUTLINE"),
-        dxf_line(off+La,off, off+La,off+La, layer="OUTLINE"),
-        dxf_line(off+La,off+La, off,off+La, layer="OUTLINE"),
-        dxf_line(off,off+La, off,off, layer="OUTLINE"),
-    ]
-
-    tri_bl = [(x + 5.0, y + 5.0) for (x, y) in TRI_CENTER]
-    tri_bl = [(p[0]*scale, p[1]*scale) for p in tri_bl]
-    entities += [
-        dxf_line(tri_bl[0][0], tri_bl[0][1], tri_bl[1][0], tri_bl[1][1], layer="MARK"),
-        dxf_line(tri_bl[1][0], tri_bl[1][1], tri_bl[2][0], tri_bl[2][1], layer="MARK"),
-        dxf_line(tri_bl[2][0], tri_bl[2][1], tri_bl[0][0], tri_bl[0][1], layer="MARK"),
-    ]
-
-    out_path.write_text(dxf_r12_header() + "".join(entities) + dxf_r12_footer(), encoding="ascii")
-
-# 生产用DXF（1:1）
+# 生产用（1:1）
 export_dxf_solid(OUT_DXF_SOLID, scale=1.0)
-# 查看用DXF（放大20x线框）
-export_dxf_wireframe(OUT_DXF_VIEW, scale=20.0)
+# 查看用（放大20x）
+export_dxf_solid(OUT_DXF_VIEW_SOLID, scale=20.0)
 
-# 打印绝对路径（避免你找不到文件）
+
+# 打印绝对路径
 def abspath(p: Path) -> str:
     return str(p.resolve())
+
 
 print("Saved:")
 print(" -", abspath(OUT_PDF))
 print(" -", abspath(OUT_PDF_VIEW))
 print(" -", abspath(OUT_DXF_SOLID))
-print(" -", abspath(OUT_DXF_VIEW))
+print(" -", abspath(OUT_DXF_VIEW_SOLID))
 print(" -", abspath(OUT_FULL_PNG))
 print(" -", abspath(OUT_ACTIVE_EXACT))
 print(" -", abspath(OUT_ACTIVE_PREVIEW))
