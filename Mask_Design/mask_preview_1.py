@@ -5,28 +5,28 @@ from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.lib.colors import black, white
 
 # =========================
-# 参数（你已确定）
+# 参数（改成 40 μm）
 # =========================
 L_GLASS_MM = 10.0
 L_ACTIVE_MM = 8.0
-K = 400
+K = 200
 CELL_MM = L_ACTIVE_MM / K
 ACTIVE_OFFSET_MM = (L_GLASS_MM - L_ACTIVE_MM) / 2.0
 
 SEED = 7
-MAX_RUN = 25
+MAX_RUN = 13
 PX_PER_CELL = 3
 
 # 输出文件
-OUT_PDF = Path("mask_full_10x10mm_vector.pdf")  # 1:1 加工版
-OUT_PDF_VIEW = Path("mask_full_10x10mm_vector_VIEWx20.pdf")  # 20x 预览版
+OUT_PDF = Path("mask_full_10x10mm_vector_40um.pdf")  # 1:1 加工版
+OUT_PDF_VIEW = Path("mask_full_10x10mm_vector_VIEWx20_40um.pdf")  # 20x 预览版
 
-OUT_DXF_SOLID = Path("mask_full_10x10mm_R12_SOLID.dxf")  # 生产用DXF（发厂）
-OUT_DXF_VIEW_SOLID = Path("mask_full_10x10mm_VIEWx20_SOLID.dxf")  # 查看用DXF（放大20x，仍是SOLID填充）
+OUT_DXF_SOLID = Path("mask_full_10x10mm_R12_SOLID_40um.dxf")  # 生产用DXF（发厂）
+OUT_DXF_VIEW_SOLID = Path("mask_full_10x10mm_VIEWx20_SOLID_40um.dxf")  # 查看用DXF（放大20x，仍是SOLID填充）
 
-OUT_FULL_PNG = Path("mask_full_10x10_preview.png")
-OUT_ACTIVE_EXACT = Path("mask_active_only_400x400.png")
-OUT_ACTIVE_PREVIEW = Path("mask_active_only_preview.png")
+OUT_FULL_PNG = Path("mask_full_10x10_preview_40um.png")
+OUT_ACTIVE_EXACT = Path("mask_active_only_200x200.png")
+OUT_ACTIVE_PREVIEW = Path("mask_active_only_preview_40um.png")
 
 TRI_CENTER = [(-4.8, -4.8), (-4.2, -4.8), (-4.8, -4.2)]
 
@@ -209,7 +209,7 @@ def dxf_solid_rect_NO_DIAG(x1, y1, x2, y2, layer="0"):
         "8", layer,
         "10", f"{x1:.6f}", "20", f"{y1:.6f}",  # pt1
         "11", f"{x2:.6f}", "21", f"{y1:.6f}",  # pt2
-        "12", f"{x1:.6f}", "22", f"{y2:.6f}",  # pt3  (注意这里是x1,y2)
+        "12", f"{x1:.6f}", "22", f"{y2:.6f}",  # pt3
         "13", f"{x2:.6f}", "23", f"{y2:.6f}",  # pt4
     ]) + "\n"
 
