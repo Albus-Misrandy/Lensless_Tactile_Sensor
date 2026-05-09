@@ -8,7 +8,7 @@ from pathlib import Path
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Lensless tactile reconstruction.")
-    parser.add_argument("--Camera_ID", type=int, default=1)
+    parser.add_argument("--Camera_ID", type=int, default=2)
     # parser.add_argument("ref_path", type=str, default="cabil", help="Reference_Path")
     return parser
 
@@ -32,7 +32,7 @@ def main():
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 3840)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 2160)
-    cap.set(cv2.CAP_PROP_FPS, 25)
+    cap.set(cv2.CAP_PROP_FPS, 30)
     cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
 
     # 给摄像头一点时间切换模式

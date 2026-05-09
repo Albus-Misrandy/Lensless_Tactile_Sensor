@@ -7,6 +7,8 @@ import numpy as np
 from pathlib import Path
 
 USE_DEBAND = False
+USE_DIRECTIONAL_DEBAND = False
+ROTATE_TO_HORIZONTAL_DEG = 0.0
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Lensless tactile reconstruction.")
@@ -87,6 +89,47 @@ def estimate_rank1_background(img, smooth_ksize=81, eps=1e-6):
 
     bg = np.outer(a_s, b_s) / (np.mean(a_s) + eps)
     return bg, a_s, b_s
+
+def rotate_image(img, angle_deg):
+    """
+    旋转图像，边界用反射填充，避免黑边
+    """
+    h, w = img.shape[:2]
+    center = (w / 2.0, h / 2.0)
+    M = cv2.getRotationMatrix2D(center, angle_deg, 1.0)
+
+    rotated = cv2.warpAffine(
+        img,
+        M,
+        (w, h),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REFLECT
+    )
+    return rotated
+
+def remove_directional_banding_additive(img, rotate_to_horizontal_deg=35.0, margin=80, smooth_ksize=81):
+    """
+    先把斜向条纹旋转到接近水平，再调用按行去条纹，最后旋转回来
+    """
+    # 1) 先旋转，让条纹更接近水平
+    rotated = rotate_image(img, rotate_to_horizontal_deg)
+
+    # 2) 在旋转后的图上做原来的“按行去条纹”
+    corrected_rot, row_stat, row_trend, row_banding = remove_horizontal_banding_additive(
+        rotated,
+        margin=margin,
+        smooth_ksize=smooth_ksize
+    )
+
+    # 3) 把估计出来的条纹项也做成一张图，便于显示
+    h_rot, w_rot = rotated.shape
+    banding_map_rot = np.tile(row_banding[:, None], (1, w_rot))
+
+    # 4) 旋转回原方向
+    corrected = rotate_image(corrected_rot, -rotate_to_horizontal_deg)
+    banding_map = rotate_image(banding_map_rot, -rotate_to_horizontal_deg)
+
+    return corrected, rotated, corrected_rot, banding_map
 
 def main():
     parser = build_parser()
@@ -172,18 +215,28 @@ def main():
         norm_img = gray / (reference + eps)
 
         # =========================
-        # 第二步：可选去横条纹
+        # 第二步：可选去条纹
         # =========================
         if USE_DEBAND:
-            debanded, row_stat, row_trend, row_banding = remove_horizontal_banding_additive(
-                norm_img,
-                margin=80,
-                smooth_ksize=81
-            )
+            if USE_DIRECTIONAL_DEBAND:
+                debanded, rotated_norm, corrected_rot, banding_map = remove_directional_banding_additive(
+                    norm_img,
+                    rotate_to_horizontal_deg=ROTATE_TO_HORIZONTAL_DEG,
+                    margin=80,
+                    smooth_ksize=81
+                )
+            else:
+                debanded, row_stat, row_trend, row_banding = remove_horizontal_banding_additive(
+                    norm_img,
+                    margin=80,
+                    smooth_ksize=81
+                )
+                banding_map = np.tile(row_banding[:, None], (1, norm_img.shape[1]))
+
             stage2_img = debanded
         else:
             debanded = None
-            row_banding = None
+            banding_map = None
             stage2_img = norm_img
 
         # =========================
@@ -198,6 +251,7 @@ def main():
         coding_like = stage2_img - bg_img
 
         h, w = gray.shape
+        # h, w = red.shape
         print(
             f"frame=({h},{w}), "
             # f"red mean={red.mean():.2f}"
@@ -212,13 +266,13 @@ def main():
         # =========================
         show_frame = frame
         show_gray = np.clip(gray, 0, 255).astype(np.uint8)
+        # show_red = np.clip(red, 0, 255).astype(np.uint8)
         show_norm = normalize_for_display(norm_img)
         show_bg = normalize_for_display(bg_img)
         show_coding = normalize_for_display(coding_like)
 
         if USE_DEBAND:
             show_stage2 = normalize_for_display(debanded)
-            banding_map = np.tile(row_banding[:, None], (1, w))
             show_banding = normalize_for_display(banding_map)
         else:
             show_stage2 = normalize_for_display(stage2_img)
